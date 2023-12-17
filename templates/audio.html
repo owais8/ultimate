@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenAI TTS Example</title>
+</head>
+<body>
+    <h1>OpenAI TTS Example</h1>
+    
+    <button id="generateButton">Generate Audio</button>
+    <audio id="audioPlayer" controls></audio>
+
+    <script>
+        document.getElementById('generateButton').addEventListener('click', function() {
+            fetch('/generate_audio')
+                .then(response => response.blob())
+                .then(blob => {
+                    const audioPlayer = document.getElementById('audioPlayer');
+                    audioPlayer.src = URL.createObjectURL(blob);
+                    audioPlayer.play();
+                });
+        });
+    </script>
+</body>
+</html>
