@@ -29,6 +29,11 @@
     </nav>
 <div class="container mt-4">
     <h1 class="mb-4">Question Generator</h1>
+    <form id="uploadForm" enctype="multipart/form-data">
+        <label for="audioFile">Choose an MP3 file:</label>
+        <input type="file" id="audioFile" name="file" accept=".mp3">
+        <button type="button" onclick="transcribeAudio()">Transcribe</button>
+    </form>
 
 <form action="/generate_translate_questions" method="post">
     <div class="form-group">
@@ -45,7 +50,6 @@
             <!-- Add more topics as needed -->
         </select>
     </div>
-
     <div class="form-group">
         <label for="language">Native Language of Application:</label>
         <select class="form-control" id="language" name="language">
@@ -60,11 +64,15 @@
 </form>
 
 <div class="mt-4" id="result">
-    {% if generated_questions %}
     <h3>Generated Questions:</h3>
+
+    {% if generated_questions %}
     <ul>
         {% for question in generated_questions %}
         <li>{{ question }}</li>
+        <button class="btn btn-primary generate-audio-btn" data-question="{{ question }}">Generate Audio</button>
+        <button class="btn btn-success generate-new-questions-btn" data-question="{{ question }}" onclick="generateNewQuestions('{{ question }}')">Generate New Questions</button>
+
         {% endfor %}
     </ul>
     <h3>Translated Questions:</h3>
@@ -88,6 +96,128 @@
 <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js"
         integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl"
         crossorigin="anonymous"></script>
+
+        <script>
+            function genrateQuestions(data){
+                if (data.error) {
+                document.getElementById('result').innerText = 'Error: ' + data.error;
+            } else {
+                document.getElementById('result').innerHTML = '';
+
+                // Iterate through the questions array and create list items
+                data.questions.forEach(question => {
+                const listItem = document.createElement('li');
+                listItem.textContent = question;
+
+                const generateButton = document.createElement('button');
+                generateButton.className = 'btn btn-primary generate-audio-btn';
+                generateButton.setAttribute('data-question', question);
+                generateButton.textContent = 'Generate Audio';
+
+                const newQuestionsButton = document.createElement('button');
+                newQuestionsButton.className = 'btn btn-success generate-new-questions-btn';
+                newQuestionsButton.setAttribute('data-question', question);
+                newQuestionsButton.textContent = 'Generate New Questions';
+                newQuestionsButton.onclick = function () {
+                    generateNewQuestions(question);
+                };
+
+                document.getElementById('result').appendChild(listItem);
+                document.getElementById('result').appendChild(generateButton);
+                document.getElementById('result').appendChild(newQuestionsButton);
+
+
+
+                });
+                data.translated_questions.forEach(question => {
+                    const listItem = document.createElement('li');
+                    listItem.textContent = question;
+                    document.getElementById('result').appendChild(listItem);
+                });
+
+            }
+
+            }
+            function generateNewQuestions(clickedQuestion) {
+                const selectedLanguage = document.getElementById('language').value;
+
+        // Make an asynchronous request to the "generate_new_questions" endpoint
+        fetch('/generate_new_questions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ clickedQuestion: clickedQuestion, language:selectedLanguage }),
+        })
+        .then(response => response.json())
+        .then(data => {
+            genrateQuestions(data)
+            // Handle the response (replace with your logic)
+        })
+        .catch(error => console.error('Error:', error));
+    }
+            document.addEventListener("DOMContentLoaded", function () {
+            // Add an event listener to the document body, delegating the event handling
+            document.body.addEventListener('click', function (event) {
+                // Check if the clicked element is a "Generate Audio" button
+                if (event.target.classList.contains('generate-audio-btn')) {
+
+                    // Get the question text associated with the clicked button
+                    var questionText = event.target.getAttribute('data-question');
+
+                    // Make an asynchronous request to the "generate_audio" endpoint
+                    fetch('/generate_audio', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ question: questionText }),
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        // Display the video URL at the top of the page
+                        var videoUrl = data.video_url;
+                        var videoElement = document.createElement('video');
+                        videoElement.src = videoUrl;
+                        videoElement.controls = true;
+                        videoElement.width = 300;  // Set the desired width
+                        videoElement.height = 300; // Set the desired height
+
+                        var resultDiv = document.getElementById('result');
+                        var existingVideoElement = resultDiv.querySelector('video');
+                        if (existingVideoElement) {
+                            existingVideoElement.remove();
+                        }
+
+                        resultDiv.insertBefore(videoElement, resultDiv.firstChild);
+                    })
+                    .catch(error => console.error('Error:', error));
+                }
+            });
+
+            // Rest of your existing code for the initial set of buttons
+            // ...
+        });
+
+        function transcribeAudio() {
+        const formData = new FormData(document.getElementById('uploadForm'));
+        const selectedLanguage = document.getElementById('language').value;
+
+        formData.append('language', selectedLanguage);
+
+        fetch('/audio_processing', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            genrateQuestions(data)
+        })
+        .catch(error => {
+            document.getElementById('result').innerText = 'Error: ' + error.message;
+        });
+    }
+        </script>
 
 </body>
 </html>
