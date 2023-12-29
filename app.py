@@ -2,8 +2,9 @@ from flask import Flask, render_template, request,jsonify, Response
 import openai
 import re
 from openai import OpenAI
-import requests
-import time
+import subprocess
+import shutil
+import os
 
 app = Flask(__name__)
 
@@ -56,18 +57,20 @@ def generate_translate_questions():
         engine_name = 'gpt-3.5-turbo-instruct'
 
         # Generate questions based on the selected topic
-        questions_prompt = f"generate short child like sentences starting with 'I want to talk about' regarding {selected_topic}"
+        questions_prompt = f"generate text such as 'you wanted to talk about' {selected_topic}, followed by a simple question about {selected_topic} in single sentence and also generate 3 simple sentences as answer suggestions to the question which is asked"
         questions_response = openai.completions.create(
             model=engine_name,
             prompt=questions_prompt,
             max_tokens=300,
             temperature=0.7
         )
-
+        print(questions_response)
         # Extract generated questions
         generated_questions = [choice.text for choice in questions_response.choices]
-        questions = re.findall(r'\d+\.\s(.+)', generated_questions[0])        # Translate the generated questions to the selected language
+        questions = re.findall(r'"([^"]*)"', generated_questions[0])        # Translate the generated questions to the selected language
         translated_questions = []
+        print("Hell",questions)
+
         for question in questions:
             translation_prompt = f"translate this text to {selected_language.lower()}: {question}"
             translation_response = openai.completions.create(
@@ -80,11 +83,11 @@ def generate_translate_questions():
 
             translated_questions.append(translated_question)
 
-        print(translated_questions)
         return render_template('questions.html', selected_language=selected_language, selected_topic=selected_topic, generated_questions=questions, translated_questions=translated_questions)
 
 @app.route('/generate_audio',methods=['POST'])
 def generate_audio():
+    print('called')
     your_text=request.json.get('question')
     your_openai_key = 'sk-...'
     client = openai.OpenAI(api_key=api_key)
@@ -94,75 +97,41 @@ def generate_audio():
         voice="nova",  # other voices: 'echo', 'fable', 'onyx', 'nova', 'shimmer'
         input=your_text
     )
-    filename='file.mp3'
-    response.stream_to_file('file.mp3')
+    filename='Wav2Lip/adio.wav'
+    response.stream_to_file('Wav2Lip/adio.wav')
     with open(filename, "rb") as f:
         file_data = f.read()
-    api_endpoint = 'https://filebin.net/xwgr3m8ib19cpxze/file.mp3'
+    checkpoint_path = 'Wav2lip/checkpoints/wav2lip_gan.pth'
+    video_path = 'Wav2lip/image.jpg'
+    audio_source = 'Wav2lip/adio.wav'
 
-    # Set the headers, including the content type as 'application/octet-stream'
-    headers = {'Content-Type': 'application/octet-stream'}
+    # Build the command string
+    command = f"python Wav2lip/inference.py --checkpoint_path {checkpoint_path} --face {video_path} --audio {audio_source}"
 
-    # Make the POST request with the file content as the request body
-    response = requests.post(api_endpoint, data=file_data, headers=headers)
+    # Use subprocess to run the command
+    try:
+        subprocess.run(command, shell=True, check=True)
+        source_file_path = 'Wav2lip/results/result_voice.mp4'
 
+        # Specify the destination directory path
+        destination_directory = 'static/'
+        os.remove('static/result_voice.mp4')
+        # Move the file
+        shutil.move(source_file_path, destination_directory)
 
-    # Check the response
-    if response.status_code == 200:
-        print('File uploaded successfully.')
-    url = 'https://api.d-id.com/talks'
-    headers = {
-        'Content-Type': 'application/json',
-        'Authorization': 'Basic b3dhaXNvcmFremFpNDg3N0BnbWFpbC5jb20:qMXpU3eSf03OJGDVShI1a'  # Replace with your actual authorization token
-    }
+        return jsonify({'video_url':'static/result_voice.mp4'})
+    except subprocess.CalledProcessError as e:
+        print(f"Error: {e}")
+        return Response(e)
 
-    data = {
-        "source_url": "https://create-images-results.d-id.com/google-oauth2%7C105476171628858848735/upl_xL40AqNRGuJnMfbwya0q_/image.jpeg",
-        "script": {
-            "type": "audio",
-            "audio_url": "https://filebin.net/xwgr3m8ib19cpxze/file.mp3"
-        }
-    }
+    
 
-    response = requests.post(url, json=data, headers=headers)
-    response = response.json()
-    id=response['id']
-    max_retries = 30
-    retry_delay_seconds = 3
-    print(id)
-    for attempt in range(1, max_retries + 1):
-        url='https://api.d-id.com/talks/'+id
-        response=requests.get(url=url,headers=headers)
-
-        if response.status_code == 200:
-            response_json = response.json()
-            pending_result = response_json.get('pending_result')
-
-            if pending_result:
-                print(f"Attempt {attempt}: Processing in progress. Sleeping...")
-                time.sleep(retry_delay_seconds)
-            else:
-                result_url = response_json.get('result_url')
-
-                if result_url:
-
-                    print(f"Processing completed. Result URL: {result_url}")
-                    return jsonify({'video_url': result_url})
-
-                else:
-                    print(f"Attempt {attempt}: Result URL not yet available. Current result URL: {result_url}")
-        else:
-            print(f"Attempt {attempt}: Failed to retrieve status. Status code: {response.status_code}")
-            return Response('Error')
-
-
-    return Response(response)
 
 def generate_engaging(text,language):
     engine_name = 'gpt-3.5-turbo-instruct'
 
     # Generate questions based on the selected topic
-    questions_prompt = f"generate engaging questions for a chat app using this context '{text}' to keep conversation going"
+    questions_prompt = f"generate text such as 'you wanted to talk about' {text}, followed by a simple engaging question about {text} in single sentence and also generate 3 simple and engaging sentences as answer suggestions to the question which is asked for chat app"
     questions_response = openai.completions.create(
         model=engine_name,
         prompt=questions_prompt,
@@ -172,7 +141,7 @@ def generate_engaging(text,language):
 
     # Extract generated questions
     generated_questions = [choice.text for choice in questions_response.choices]
-    questions = re.findall(r'\d+\.\s(.+)', generated_questions[0])        # Translate the generated questions to the selected language
+    questions = re.findall(r'"([^"]*)"', generated_questions[0])        # Translate the generated questions to the selected language
     translated_questions = []
     for question in questions:
         translation_prompt = f"translate this text to {language}: {question}"
@@ -192,7 +161,7 @@ def generate_engaging(text,language):
 @app.route('/audio_processing',methods=['POST'])
 def generate_text():
     client = openai.OpenAI(api_key=api_key)
-    audio_file = request.files['file']
+    audio_file = request.files['audio_data']
     language = request.form.get('language')
 
     audio_file.save('f.mp3')
@@ -216,7 +185,28 @@ def generate_new_questions():
     questions,translated_questions=generate_engaging(text=clicked_question,language=language)
     return jsonify({'questions':questions,'translated_questions': translated_questions})
 
+@app.route('/temp',methods=['POST'])
+def tempp():
+    checkpoint_path = 'Wav2lip/checkpoints/wav2lip_gan.pth'
+    video_path = 'Wav2lip/image.jpg'
+    audio_source = 'Wav2lip/adio.wav'
 
+    # Build the command string
+    command = f"python Wav2lip/inference.py --checkpoint_path {checkpoint_path} --face {video_path} --audio {audio_source}"
 
+    # Use subprocess to run the command
+    try:
+        subprocess.run(command, shell=True, check=True)
+        source_file_path = 'Wav2lip/results/result_voice.mp4'
+
+        # Specify the destination directory path
+        destination_directory = 'static/'
+
+        # Move the file
+        shutil.move(source_file_path, destination_directory)
+
+    except subprocess.CalledProcessError as e:
+        print(f"Error: {e}")
+    return 'hello'
 if __name__ == '__main__':
     app.run(debug=True)
